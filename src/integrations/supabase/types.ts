@@ -14,16 +14,402 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      activity_log: {
+        Row: {
+          action: string
+          created_at: string
+          details: Json | null
+          entity_id: string | null
+          entity_type: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          details?: Json | null
+          entity_id?: string | null
+          entity_type: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          details?: Json | null
+          entity_id?: string | null
+          entity_type?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      candidates: {
+        Row: {
+          candidate_id: string
+          cohort_id: string
+          created_at: string
+          email: string | null
+          id: string
+          join_date: string
+          location: string
+          name: string
+          skill: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          candidate_id: string
+          cohort_id: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          join_date?: string
+          location: string
+          name: string
+          skill: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          candidate_id?: string
+          cohort_id?: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          join_date?: string
+          location?: string
+          name?: string
+          skill?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "candidates_cohort_id_fkey"
+            columns: ["cohort_id"]
+            isOneToOne: false
+            referencedRelation: "cohorts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cohorts: {
+        Row: {
+          bu: string
+          candidate_count: number
+          coach_id: string | null
+          code: string
+          created_at: string
+          end_date: string | null
+          id: string
+          location: string
+          name: string
+          progress: number
+          skill: string
+          start_date: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          bu: string
+          candidate_count?: number
+          coach_id?: string | null
+          code: string
+          created_at?: string
+          end_date?: string | null
+          id?: string
+          location: string
+          name: string
+          progress?: number
+          skill: string
+          start_date: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          bu?: string
+          candidate_count?: number
+          coach_id?: string | null
+          code?: string
+          created_at?: string
+          end_date?: string | null
+          id?: string
+          location?: string
+          name?: string
+          progress?: number
+          skill?: string
+          start_date?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      daily_efforts: {
+        Row: {
+          active_genc_count: number | null
+          area_of_work: string
+          cohort_id: string
+          created_at: string
+          date: string
+          effort_hours: number
+          id: string
+          mode_of_training: string
+          notes: string | null
+          session_end_time: string | null
+          session_start_time: string | null
+          stakeholder_id: string
+          stakeholder_name: string
+          stakeholder_type: string
+          submitted_by: string
+          updated_at: string
+          virtual_reason: string | null
+        }
+        Insert: {
+          active_genc_count?: number | null
+          area_of_work: string
+          cohort_id: string
+          created_at?: string
+          date: string
+          effort_hours: number
+          id?: string
+          mode_of_training: string
+          notes?: string | null
+          session_end_time?: string | null
+          session_start_time?: string | null
+          stakeholder_id: string
+          stakeholder_name: string
+          stakeholder_type: string
+          submitted_by: string
+          updated_at?: string
+          virtual_reason?: string | null
+        }
+        Update: {
+          active_genc_count?: number | null
+          area_of_work?: string
+          cohort_id?: string
+          created_at?: string
+          date?: string
+          effort_hours?: number
+          id?: string
+          mode_of_training?: string
+          notes?: string | null
+          session_end_time?: string | null
+          session_start_time?: string | null
+          stakeholder_id?: string
+          stakeholder_name?: string
+          stakeholder_type?: string
+          submitted_by?: string
+          updated_at?: string
+          virtual_reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_efforts_cohort_id_fkey"
+            columns: ["cohort_id"]
+            isOneToOne: false
+            referencedRelation: "cohorts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mentors: {
+        Row: {
+          assignment_end_date: string | null
+          assignment_start_date: string | null
+          avatar_url: string | null
+          cohort_id: string
+          created_at: string
+          email: string
+          emp_id: string
+          id: string
+          name: string
+          phone: string | null
+          skill: string
+          status: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          assignment_end_date?: string | null
+          assignment_start_date?: string | null
+          avatar_url?: string | null
+          cohort_id: string
+          created_at?: string
+          email: string
+          emp_id: string
+          id?: string
+          name: string
+          phone?: string | null
+          skill: string
+          status?: string
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          assignment_end_date?: string | null
+          assignment_start_date?: string | null
+          avatar_url?: string | null
+          cohort_id?: string
+          created_at?: string
+          email?: string
+          emp_id?: string
+          id?: string
+          name?: string
+          phone?: string | null
+          skill?: string
+          status?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mentors_cohort_id_fkey"
+            columns: ["cohort_id"]
+            isOneToOne: false
+            referencedRelation: "cohorts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          department: string | null
+          email: string
+          full_name: string
+          id: string
+          phone: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          department?: string | null
+          email: string
+          full_name: string
+          id?: string
+          phone?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          department?: string | null
+          email?: string
+          full_name?: string
+          id?: string
+          phone?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      trainers: {
+        Row: {
+          avatar_url: string | null
+          cohort_id: string
+          created_at: string
+          email: string
+          emp_id: string
+          id: string
+          is_internal: boolean
+          name: string
+          phone: string | null
+          skill: string
+          status: string
+          training_end_date: string | null
+          training_start_date: string | null
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          cohort_id: string
+          created_at?: string
+          email: string
+          emp_id: string
+          id?: string
+          is_internal?: boolean
+          name: string
+          phone?: string | null
+          skill: string
+          status?: string
+          training_end_date?: string | null
+          training_start_date?: string | null
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          cohort_id?: string
+          created_at?: string
+          email?: string
+          emp_id?: string
+          id?: string
+          is_internal?: boolean
+          name?: string
+          phone?: string | null
+          skill?: string
+          status?: string
+          training_end_date?: string | null
+          training_start_date?: string | null
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trainers_cohort_id_fkey"
+            columns: ["cohort_id"]
+            isOneToOne: false
+            referencedRelation: "cohorts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_user_role: {
+        Args: { _user_id: string }
+        Returns: Database["public"]["Enums"]["app_role"]
+      }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "coach"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +536,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "coach"],
+    },
   },
 } as const
