@@ -11,12 +11,15 @@ import {
   LogOut,
   Menu,
   X,
-  Bell,
   Search,
-  ChevronDown,
+  Moon,
+  Sun,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { FloatingOrbs } from '@/components/ui/FloatingOrbs';
+import { NotificationDropdown } from './NotificationDropdown';
+import { UserDropdown } from './UserDropdown';
+import { useTheme } from '@/hooks/useTheme';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -41,6 +44,7 @@ export const DashboardLayout = () => {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
+  const { theme, toggleTheme } = useTheme();
 
   const filteredNavItems = navItems.filter((item) =>
     user?.role ? item.roles.includes(user.role) : false
@@ -124,6 +128,32 @@ export const DashboardLayout = () => {
             })}
           </nav>
 
+          {/* Theme Toggle */}
+          <div className="border-t border-border/50 p-4">
+            <motion.button
+              onClick={toggleTheme}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              whileHover={{ x: 4 }}
+            >
+              {theme === 'dark' ? (
+                <Sun className="h-5 w-5 flex-shrink-0" />
+              ) : (
+                <Moon className="h-5 w-5 flex-shrink-0" />
+              )}
+              <AnimatePresence mode="wait">
+                {sidebarOpen && (
+                  <motion.span
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                  >
+                    {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </motion.button>
+          </div>
+
           {/* User Section */}
           <div className="border-t border-border/50 p-4">
             <div className="flex items-center gap-3">
@@ -174,12 +204,21 @@ export const DashboardLayout = () => {
           </div>
           <span className="text-sm font-bold">Cohort Platform</span>
         </div>
-        <button
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={toggleTheme}
+            className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+          </button>
+          <NotificationDropdown />
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+          </button>
+        </div>
       </header>
 
       {/* Mobile Menu */}
@@ -244,17 +283,8 @@ export const DashboardLayout = () => {
             />
           </div>
           <div className="flex items-center gap-4">
-            <button className="relative rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-              <Bell className="h-5 w-5" />
-              <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-primary" />
-            </button>
-            <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/30 px-3 py-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-secondary to-neon-purple text-sm font-semibold text-secondary-foreground">
-                {user?.name?.charAt(0) || 'U'}
-              </div>
-              <span className="text-sm font-medium">{user?.name}</span>
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-            </div>
+            <NotificationDropdown />
+            <UserDropdown />
           </div>
         </header>
 

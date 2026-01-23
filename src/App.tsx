@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
+import { ThemeProvider } from "@/hooks/useTheme";
 import { Landing } from "./pages/Landing";
 import { Login } from "./pages/Login";
 import { Dashboard } from "./pages/Dashboard";
@@ -42,44 +43,46 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          {/* Public Routes */}
-          <Route path="/" element={<Landing />} />
-          <Route path="/login" element={<Login />} />
-          
-          {/* Protected Routes */}
-          <Route
-            element={
-              <ProtectedRoute>
-                <DashboardLayout />
-              </ProtectedRoute>
-            }
-          >
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/cohorts" element={<Cohorts />} />
-            <Route path="/cohorts/:id" element={<CohortDetail />} />
-            <Route path="/candidates" element={<Candidates />} />
-            <Route path="/efforts" element={<DailyEfforts />} />
-            <Route path="/reports" element={<Reports />} />
+    <ThemeProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            {/* Public Routes */}
+            <Route path="/" element={<Landing />} />
+            <Route path="/login" element={<Login />} />
+            
+            {/* Protected Routes */}
             <Route
-              path="/settings"
               element={
-                <AdminRoute>
-                  <Settings />
-                </AdminRoute>
+                <ProtectedRoute>
+                  <DashboardLayout />
+                </ProtectedRoute>
               }
-            />
-          </Route>
-          
-          {/* Catch-all */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
+            >
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/cohorts" element={<Cohorts />} />
+              <Route path="/cohorts/:id" element={<CohortDetail />} />
+              <Route path="/candidates" element={<Candidates />} />
+              <Route path="/efforts" element={<DailyEfforts />} />
+              <Route path="/reports" element={<Reports />} />
+              <Route
+                path="/settings"
+                element={
+                  <AdminRoute>
+                    <Settings />
+                  </AdminRoute>
+                }
+              />
+            </Route>
+            
+            {/* Catch-all */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 

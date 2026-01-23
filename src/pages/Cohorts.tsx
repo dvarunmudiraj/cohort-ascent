@@ -4,12 +4,10 @@ import { useNavigate } from 'react-router-dom';
 import {
   GraduationCap,
   Search,
-  Filter,
   Plus,
   MapPin,
   Users,
   Calendar,
-  MoreVertical,
   ArrowUpRight,
   ChevronDown,
 } from 'lucide-react';
@@ -17,6 +15,8 @@ import { useCohortStore, Cohort } from '@/stores/cohortStore';
 import { useAuthStore } from '@/stores/authStore';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { GradientButton } from '@/components/ui/GradientButton';
+import { ActionMenu } from '@/components/ui/ActionMenu';
+import { toast } from 'sonner';
 
 const statusConfig = {
   active: { label: 'Active', class: 'badge-active' },
@@ -32,6 +32,7 @@ export const Cohorts = () => {
   const { user } = useAuthStore();
   const navigate = useNavigate();
 
+  const isAdmin = user?.role === 'admin';
   const locations = [...new Set(cohorts.map((c) => c.location))];
 
   const filteredCohorts = cohorts.filter((cohort) => {
@@ -41,9 +42,19 @@ export const Cohorts = () => {
       cohort.skill.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === 'all' || cohort.status === statusFilter;
     const matchesLocation = locationFilter === 'all' || cohort.location === locationFilter;
-    const matchesRole = user?.role === 'admin' || cohort.coachId === 'c1';
+    const matchesRole = isAdmin || cohort.coachId === 'c1';
     return matchesSearch && matchesStatus && matchesLocation && matchesRole;
   });
+
+  const handleEditCohort = (cohort: Cohort) => {
+    toast.info(`Edit cohort: ${cohort.name}`);
+    // Navigate to edit or open modal
+  };
+
+  const handleDeleteCohort = (cohort: Cohort) => {
+    toast.info(`Delete cohort: ${cohort.name}`);
+    // Show confirmation dialog
+  };
 
   return (
     <div className="space-y-8">
@@ -56,17 +67,21 @@ export const Cohorts = () => {
         <div>
           <h1 className="text-3xl font-bold text-foreground">Cohorts</h1>
           <p className="mt-2 text-muted-foreground">
-            {user?.role === 'admin'
+            {isAdmin
               ? 'Manage all training cohorts across locations'
               : 'Your assigned cohort programs'}
           </p>
         </div>
-        <GradientButton
-          variant="primary"
-          icon={<Plus className="h-5 w-5" />}
-        >
-          New Cohort
-        </GradientButton>
+        {/* Only show New Cohort button for admins */}
+        {isAdmin && (
+          <GradientButton
+            variant="primary"
+            icon={<Plus className="h-5 w-5" />}
+            onClick={() => toast.info('Create new cohort functionality')}
+          >
+            New Cohort
+          </GradientButton>
+        )}
       </motion.div>
 
       {/* Filters */}
@@ -125,6 +140,9 @@ export const Cohorts = () => {
               cohort={cohort}
               index={index}
               onClick={() => navigate(`/cohorts/${cohort.id}`)}
+              onEdit={() => handleEditCohort(cohort)}
+              onDelete={() => handleDeleteCohort(cohort)}
+              isAdmin={isAdmin}
             />
           ))}
         </AnimatePresence>
@@ -151,9 +169,12 @@ interface CohortCardProps {
   cohort: Cohort;
   index: number;
   onClick: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  isAdmin: boolean;
 }
 
-const CohortCard = ({ cohort, index, onClick }: CohortCardProps) => {
+const CohortCard = ({ cohort, index, onClick, onEdit, onDelete, isAdmin }: CohortCardProps) => {
   const status = statusConfig[cohort.status];
 
   return (
@@ -182,14 +203,16 @@ const CohortCard = ({ cohort, index, onClick }: CohortCardProps) => {
               <h3 className="font-semibold text-foreground">{cohort.name}</h3>
             </div>
           </div>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-            }}
-            className="rounded-lg p-1 text-muted-foreground opacity-0 transition-all hover:bg-muted hover:text-foreground group-hover:opacity-100"
-          >
-            <MoreVertical className="h-5 w-5" />
-          </button>
+          <div className="opacity-0 transition-all group-hover:opacity-100">
+            <ActionMenu
+              onEdit={isAdmin ? onEdit : undefined}
+              onDelete={isAdmin ? onDelete : undefined}
+              onView={onClick}
+              showEdit={isAdmin}
+              showDelete={isAdmin}
+              showView={true}
+            />
+          </div>
         </div>
 
         {/* Info */}
