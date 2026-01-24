@@ -1,9 +1,8 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Calendar,
   Clock,
-  Save,
   Send,
   ChevronRight,
   ChevronLeft,
@@ -12,6 +11,8 @@ import {
   Plus,
   Trash2,
   Eye,
+  ChevronDown,
+  Filter,
 } from 'lucide-react';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { GradientButton } from '@/components/ui/GradientButton';
@@ -19,11 +20,15 @@ import { useCohortStore } from '@/stores/cohortStore';
 import { useCohorts } from '@/hooks/useCohorts';
 import { useTrainers } from '@/hooks/useTrainers';
 import { useMentors } from '@/hooks/useMentors';
-import { useDailyEfforts, useBulkCreateDailyEfforts } from '@/hooks/useDailyEfforts';
+import { useDailyEfforts, useBulkCreateDailyEfforts, useUpdateDailyEffort, useDeleteDailyEffort, DailyEffortDB } from '@/hooks/useDailyEfforts';
 import { useAuthStore } from '@/stores/authStore';
+import { EffortEntryCard } from '@/components/efforts/EffortEntryCard';
+import { EffortViewModal } from '@/components/efforts/EffortViewModal';
+import { EffortEditModal } from '@/components/efforts/EffortEditModal';
+import { generateCalendarWeeks, getCurrentWeek, WeekRange } from '@/utils/dateUtils';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subDays } from 'date-fns';
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, parseISO } from 'date-fns';
 
 type Step = 'cohort' | 'stakeholder' | 'review';
 type ViewMode = 'form' | 'history';
@@ -34,12 +39,17 @@ interface StakeholderEntry {
   stakeholderRole: string;
   stakeholderId: string;
   stakeholderName: string;
+  stakeholderEmpId: string;
+  stakeholderEmail: string;
+  employeeType: string;
   mode: string;
   virtualReason: string;
   areaOfWork: string;
   effortHours: string;
   startTime: string;
   endTime: string;
+  trainingStartDate: string;
+  trainingEndDate: string;
 }
 
 const steps: { id: Step; label: string }[] = [
@@ -55,65 +65,105 @@ const stakeholderRoles = [
   { value: 'buddy-mentor', label: 'Buddy Mentor' },
 ];
 
+const emptyEntry = (): StakeholderEntry => ({
+  id: Date.now().toString(),
+  stakeholderRole: '',
+  stakeholderId: '',
+  stakeholderName: '',
+  stakeholderEmpId: '',
+  stakeholderEmail: '',
+  employeeType: 'internal',
+  mode: 'in-person',
+  virtualReason: '',
+  areaOfWork: '',
+  effortHours: '',
+  startTime: '',
+  endTime: '',
+  trainingStartDate: '',
+  trainingEndDate: '',
+});
+
 export const DailyEfforts = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('form');
   const [currentStep, setCurrentStep] = useState<Step>('cohort');
   const [dateFilter, setDateFilter] = useState<DateFilter>('week');
+  const [selectedWeek, setSelectedWeek] = useState<string>('');
   const { cohorts: mockCohorts } = useCohortStore();
   const { data: dbCohorts = [] } = useCohorts();
   const { user } = useAuthStore();
   const bulkCreateEfforts = useBulkCreateDailyEfforts();
+  const updateEffort = useUpdateDailyEffort();
+  const deleteEffort = useDeleteDailyEffort();
+
+  // Modal states
+  const [viewingEffort, setViewingEffort] = useState<DailyEffortDB | null>(null);
+  const [editingEffort, setEditingEffort] = useState<DailyEffortDB | null>(null);
 
   // Use mock cohorts if no DB cohorts
-  const cohorts = dbCohorts.length > 0 ? dbCohorts.map(c => ({
-    id: c.id,
-    code: c.code,
-    name: c.name,
-    bu: c.bu,
-    skill: c.skill,
-    location: c.location,
-  })) : mockCohorts.filter(c => c.status === 'active').map(c => ({
-    id: c.id,
-    code: c.code,
-    name: c.name,
-    bu: c.bu,
-    skill: c.skill,
-    location: c.location,
-  }));
+  const cohorts = useMemo(() => {
+    if (dbCohorts.length > 0) {
+      return dbCohorts.map(c => ({
+        id: c.id,
+        code: c.code,
+        name: c.name,
+        bu: c.bu,
+        skill: c.skill,
+        location: c.location,
+        startDate: c.start_date,
+        endDate: c.end_date || undefined,
+      }));
+    }
+    return mockCohorts.filter(c => c.status === 'active').map(c => ({
+      id: c.id,
+      code: c.code,
+      name: c.name,
+      bu: c.bu,
+      skill: c.skill,
+      location: c.location,
+      startDate: c.startDate,
+      endDate: c.endDate,
+    }));
+  }, [dbCohorts, mockCohorts]);
 
   const [formData, setFormData] = useState({
     cohortId: '',
     date: new Date().toISOString().split('T')[0],
     activeGencCount: '',
+    month: format(new Date(), 'MMMM yyyy'),
   });
 
-  const [entries, setEntries] = useState<StakeholderEntry[]>([
-    {
-      id: '1',
-      stakeholderRole: '',
-      stakeholderId: '',
-      stakeholderName: '',
-      mode: 'in-person',
-      virtualReason: '',
-      areaOfWork: '',
-      effortHours: '',
-      startTime: '',
-      endTime: '',
-    },
-  ]);
+  const [entries, setEntries] = useState<StakeholderEntry[]>([emptyEntry()]);
 
   const selectedCohort = cohorts.find((c) => c.id === formData.cohortId);
   const { data: trainers = [] } = useTrainers(formData.cohortId);
   const { data: mentors = [] } = useMentors(formData.cohortId);
 
+  // Generate calendar weeks based on selected cohort dates
+  const calendarWeeks = useMemo(() => {
+    if (!selectedCohort) return [];
+    const endDate = selectedCohort.endDate || format(new Date(), 'yyyy-MM-dd');
+    return generateCalendarWeeks(selectedCohort.startDate, endDate);
+  }, [selectedCohort]);
+
   // Date filter logic
   const getDateRange = () => {
     const today = new Date();
+    
+    if (selectedWeek && calendarWeeks.length > 0) {
+      const week = calendarWeeks.find(w => w.id === selectedWeek);
+      if (week) {
+        return { 
+          start: format(week.startDate, 'yyyy-MM-dd'), 
+          end: format(week.endDate, 'yyyy-MM-dd') 
+        };
+      }
+    }
+    
     switch (dateFilter) {
       case 'today':
         return { start: format(today, 'yyyy-MM-dd'), end: format(today, 'yyyy-MM-dd') };
       case 'week':
-        return { start: format(startOfWeek(today), 'yyyy-MM-dd'), end: format(endOfWeek(today), 'yyyy-MM-dd') };
+        return { start: format(startOfWeek(today, { weekStartsOn: 1 }), 'yyyy-MM-dd'), end: format(endOfWeek(today, { weekStartsOn: 1 }), 'yyyy-MM-dd') };
       case 'month':
         return { start: format(startOfMonth(today), 'yyyy-MM-dd'), end: format(endOfMonth(today), 'yyyy-MM-dd') };
       default:
@@ -145,21 +195,7 @@ export const DailyEfforts = () => {
   };
 
   const addEntry = () => {
-    setEntries([
-      ...entries,
-      {
-        id: Date.now().toString(),
-        stakeholderRole: '',
-        stakeholderId: '',
-        stakeholderName: '',
-        mode: 'in-person',
-        virtualReason: '',
-        areaOfWork: '',
-        effortHours: '',
-        startTime: '',
-        endTime: '',
-      },
-    ]);
+    setEntries([...entries, emptyEntry()]);
   };
 
   const removeEntry = (id: string) => {
@@ -196,20 +232,68 @@ export const DailyEfforts = () => {
     switch (role) {
       case 'tech-trainer':
         return trainers.length > 0 
-          ? trainers.filter(t => t.type === 'technical').map(t => ({ id: t.id, name: t.name }))
-          : mockTrainers.filter(t => t.type === 'technical').map(t => ({ id: t.id, name: t.name }));
+          ? trainers.filter(t => t.type === 'technical').map(t => ({ 
+              id: t.id, 
+              name: t.name, 
+              empId: t.emp_id, 
+              email: t.email,
+              isInternal: t.is_internal 
+            }))
+          : mockTrainers.filter(t => t.type === 'technical').map(t => ({ 
+              id: t.id, 
+              name: t.name, 
+              empId: t.id, 
+              email: t.email,
+              isInternal: t.isInternal 
+            }));
       case 'behavioral-trainer':
         return trainers.length > 0
-          ? trainers.filter(t => t.type === 'behavioral').map(t => ({ id: t.id, name: t.name }))
-          : mockTrainers.filter(t => t.type === 'behavioral').map(t => ({ id: t.id, name: t.name }));
+          ? trainers.filter(t => t.type === 'behavioral').map(t => ({ 
+              id: t.id, 
+              name: t.name, 
+              empId: t.emp_id, 
+              email: t.email,
+              isInternal: t.is_internal 
+            }))
+          : mockTrainers.filter(t => t.type === 'behavioral').map(t => ({ 
+              id: t.id, 
+              name: t.name, 
+              empId: t.id, 
+              email: t.email,
+              isInternal: t.isInternal 
+            }));
       case 'mentor':
         return mentors.length > 0
-          ? mentors.filter(m => m.type === 'mentor').map(m => ({ id: m.id, name: m.name }))
-          : mockMentors.filter(m => m.type === 'mentor').map(m => ({ id: m.id, name: m.name }));
+          ? mentors.filter(m => m.type === 'mentor').map(m => ({ 
+              id: m.id, 
+              name: m.name, 
+              empId: m.emp_id, 
+              email: m.email,
+              isInternal: true 
+            }))
+          : mockMentors.filter(m => m.type === 'mentor').map(m => ({ 
+              id: m.id, 
+              name: m.name, 
+              empId: m.id, 
+              email: m.email,
+              isInternal: true 
+            }));
       case 'buddy-mentor':
         return mentors.length > 0
-          ? mentors.filter(m => m.type === 'buddy').map(m => ({ id: m.id, name: m.name }))
-          : mockMentors.filter(m => m.type === 'buddy').map(m => ({ id: m.id, name: m.name }));
+          ? mentors.filter(m => m.type === 'buddy').map(m => ({ 
+              id: m.id, 
+              name: m.name, 
+              empId: m.emp_id, 
+              email: m.email,
+              isInternal: true 
+            }))
+          : mockMentors.filter(m => m.type === 'buddy').map(m => ({ 
+              id: m.id, 
+              name: m.name, 
+              empId: m.id, 
+              email: m.email,
+              isInternal: true 
+            }));
       default:
         return [];
     }
@@ -244,22 +328,12 @@ export const DailyEfforts = () => {
 
     bulkCreateEfforts.mutate(effortsToCreate, {
       onSuccess: () => {
+        toast.success(`${validEntries.length} effort entries submitted successfully!`);
         // Reset form
         setCurrentStep('cohort');
-        setEntries([{
-          id: '1',
-          stakeholderRole: '',
-          stakeholderId: '',
-          stakeholderName: '',
-          mode: 'in-person',
-          virtualReason: '',
-          areaOfWork: '',
-          effortHours: '',
-          startTime: '',
-          endTime: '',
-        }]);
+        setEntries([emptyEntry()]);
         setFormData({
-          cohortId: formData.cohortId, // Keep cohort selected
+          ...formData,
           date: new Date().toISOString().split('T')[0],
           activeGencCount: '',
         });
@@ -268,13 +342,42 @@ export const DailyEfforts = () => {
     });
   };
 
-  // Group efforts by date
-  const groupedEfforts = efforts.reduce((acc, effort) => {
-    const date = effort.date;
-    if (!acc[date]) acc[date] = [];
-    acc[date].push(effort);
-    return acc;
-  }, {} as Record<string, typeof efforts>);
+  // Group efforts by date and week
+  const groupedEfforts = useMemo(() => {
+    const byDate: Record<string, DailyEffortDB[]> = {};
+    efforts.forEach(effort => {
+      if (!byDate[effort.date]) byDate[effort.date] = [];
+      byDate[effort.date].push(effort);
+    });
+    return byDate;
+  }, [efforts]);
+
+  // Calculate total hours
+  const totalHours = useMemo(() => {
+    return efforts.reduce((sum, e) => sum + Number(e.effort_hours), 0);
+  }, [efforts]);
+
+  const handleEditEffort = (effort: DailyEffortDB) => {
+    setEditingEffort(effort);
+  };
+
+  const handleViewEffort = (effort: DailyEffortDB) => {
+    setViewingEffort(effort);
+  };
+
+  const handleDeleteEffort = (id: string) => {
+    if (confirm('Are you sure you want to delete this entry?')) {
+      deleteEffort.mutate(id);
+    }
+  };
+
+  const handleSaveEdit = (data: Partial<DailyEffortDB> & { id: string }) => {
+    updateEffort.mutate(data, {
+      onSuccess: () => {
+        setEditingEffort(null);
+      },
+    });
+  };
 
   return (
     <div className="space-y-8">
@@ -375,12 +478,15 @@ export const DailyEfforts = () => {
               {currentStep === 'cohort' && (
                 <div className="space-y-6">
                   <h2 className="text-xl font-semibold text-foreground">Cohort Details</h2>
-                  <div className="grid gap-6 md:grid-cols-3">
+                  <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-foreground">Select Cohort</label>
                       <select
                         value={formData.cohortId}
-                        onChange={(e) => setFormData({ ...formData, cohortId: e.target.value })}
+                        onChange={(e) => {
+                          setFormData({ ...formData, cohortId: e.target.value });
+                          setSelectedWeek('');
+                        }}
                         className="input-premium w-full"
                       >
                         <option value="">Choose a cohort...</option>
@@ -391,15 +497,53 @@ export const DailyEfforts = () => {
                         ))}
                       </select>
                     </div>
+
+                    {/* Calendar Weeks Dropdown */}
+                    {selectedCohort && calendarWeeks.length > 0 && (
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-foreground">Select Week</label>
+                        <div className="relative">
+                          <select
+                            value={selectedWeek}
+                            onChange={(e) => setSelectedWeek(e.target.value)}
+                            className="input-premium w-full appearance-none pr-10"
+                          >
+                            <option value="">Current Week</option>
+                            {calendarWeeks.map((week) => (
+                              <option key={week.id} value={week.id}>
+                                {week.label}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        </div>
+                      </div>
+                    )}
+
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-foreground">Date</label>
                       <input
                         type="date"
                         value={formData.date}
-                        onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                        onChange={(e) => setFormData({ 
+                          ...formData, 
+                          date: e.target.value,
+                          month: format(parseISO(e.target.value), 'MMMM yyyy')
+                        })}
                         className="input-premium w-full"
                       />
                     </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-foreground">Month</label>
+                      <input
+                        type="text"
+                        value={formData.month}
+                        readOnly
+                        className="input-premium w-full bg-muted/30"
+                      />
+                    </div>
+
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-foreground">Active GenC Count</label>
                       <input
@@ -411,17 +555,31 @@ export const DailyEfforts = () => {
                       />
                     </div>
                   </div>
+
                   {selectedCohort && (
                     <motion.div
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       className="rounded-lg border border-border/50 bg-muted/30 p-4"
                     >
-                      <h4 className="font-medium text-foreground">Selected Cohort Info</h4>
-                      <div className="mt-2 grid gap-2 text-sm text-muted-foreground sm:grid-cols-3">
-                        <p><span className="font-medium">BU:</span> {selectedCohort.bu}</p>
-                        <p><span className="font-medium">Skill:</span> {selectedCohort.skill}</p>
-                        <p><span className="font-medium">Location:</span> {selectedCohort.location}</p>
+                      <h4 className="font-medium text-foreground mb-3">Selected Cohort Info</h4>
+                      <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                        <div>
+                          <p className="text-muted-foreground">Cohort Code</p>
+                          <p className="font-medium text-foreground">{selectedCohort.code}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">BU</p>
+                          <p className="font-medium text-foreground">{selectedCohort.bu}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Skill</p>
+                          <p className="font-medium text-foreground">{selectedCohort.skill}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Training Location</p>
+                          <p className="font-medium text-foreground">{selectedCohort.location}</p>
+                        </div>
                       </div>
                     </motion.div>
                   )}
@@ -431,7 +589,12 @@ export const DailyEfforts = () => {
               {currentStep === 'stakeholder' && (
                 <div className="space-y-6">
                   <div className="flex items-center justify-between">
-                    <h2 className="text-xl font-semibold text-foreground">Stakeholder Entries</h2>
+                    <div>
+                      <h2 className="text-xl font-semibold text-foreground">Stakeholder Entries</h2>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Add entries for Technical Trainer, Behavioral Trainer, Mentor, and Buddy Mentor
+                      </p>
+                    </div>
                     <GradientButton
                       variant="outline"
                       size="sm"
@@ -441,9 +604,6 @@ export const DailyEfforts = () => {
                       Add Entry
                     </GradientButton>
                   </div>
-                  <p className="text-sm text-muted-foreground">
-                    Add multiple entries for different stakeholders (Technical, Behavioral, Mentor, Buddy)
-                  </p>
 
                   <AnimatePresence>
                     {entries.map((entry, index) => (
@@ -465,7 +625,9 @@ export const DailyEfforts = () => {
                             </button>
                           )}
                         </div>
+
                         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                          {/* SME/Mentor/Buddy Mentor/MFRP Contributor */}
                           <div className="space-y-2">
                             <label className="text-sm font-medium text-foreground">Stakeholder Role</label>
                             <select
@@ -474,6 +636,8 @@ export const DailyEfforts = () => {
                                 updateEntry(entry.id, 'stakeholderRole', e.target.value);
                                 updateEntry(entry.id, 'stakeholderId', '');
                                 updateEntry(entry.id, 'stakeholderName', '');
+                                updateEntry(entry.id, 'stakeholderEmpId', '');
+                                updateEntry(entry.id, 'stakeholderEmail', '');
                               }}
                               className="input-premium w-full"
                             >
@@ -483,24 +647,56 @@ export const DailyEfforts = () => {
                               ))}
                             </select>
                           </div>
+
+                          {/* SME ID / Mentor ID */}
                           <div className="space-y-2">
-                            <label className="text-sm font-medium text-foreground">Stakeholder Name</label>
+                            <label className="text-sm font-medium text-foreground">SME/Mentor ID</label>
                             <select
                               value={entry.stakeholderId}
                               onChange={(e) => {
                                 const selected = getStakeholderOptions(entry.stakeholderRole).find(s => s.id === e.target.value);
                                 updateEntry(entry.id, 'stakeholderId', e.target.value);
                                 updateEntry(entry.id, 'stakeholderName', selected?.name || '');
+                                updateEntry(entry.id, 'stakeholderEmpId', selected?.empId || '');
+                                updateEntry(entry.id, 'stakeholderEmail', selected?.email || '');
+                                updateEntry(entry.id, 'employeeType', selected?.isInternal ? 'internal' : 'external');
                               }}
                               className="input-premium w-full"
                               disabled={!entry.stakeholderRole}
                             >
                               <option value="">Select stakeholder...</option>
                               {getStakeholderOptions(entry.stakeholderRole).map((s) => (
-                                <option key={s.id} value={s.id}>{s.name}</option>
+                                <option key={s.id} value={s.id}>{s.empId} - {s.name}</option>
                               ))}
                             </select>
                           </div>
+
+                          {/* SME Name / Mentor Name */}
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium text-foreground">SME/Mentor Name</label>
+                            <input
+                              type="text"
+                              value={entry.stakeholderName}
+                              readOnly
+                              className="input-premium w-full bg-muted/30"
+                              placeholder="Auto-filled"
+                            />
+                          </div>
+
+                          {/* Mapped Trainer Type */}
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium text-foreground">Trainer Type</label>
+                            <select
+                              value={entry.employeeType}
+                              onChange={(e) => updateEntry(entry.id, 'employeeType', e.target.value)}
+                              className="input-premium w-full"
+                            >
+                              <option value="internal">Internal</option>
+                              <option value="external">External</option>
+                            </select>
+                          </div>
+
+                          {/* Mode of Training */}
                           <div className="space-y-2">
                             <label className="text-sm font-medium text-foreground">Mode of Training</label>
                             <div className="flex gap-4 pt-2">
@@ -526,6 +722,8 @@ export const DailyEfforts = () => {
                               </label>
                             </div>
                           </div>
+
+                          {/* Reason for Virtual */}
                           {entry.mode === 'virtual' && (
                             <div className="space-y-2">
                               <label className="text-sm font-medium text-foreground">Reason for Virtual</label>
@@ -538,6 +736,8 @@ export const DailyEfforts = () => {
                               />
                             </div>
                           )}
+
+                          {/* Area of Work */}
                           <div className="space-y-2">
                             <label className="text-sm font-medium text-foreground">Area of Work</label>
                             <input
@@ -548,8 +748,32 @@ export const DailyEfforts = () => {
                               className="input-premium w-full"
                             />
                           </div>
+
+                          {/* Training Start Date */}
                           <div className="space-y-2">
-                            <label className="text-sm font-medium text-foreground">Start Time</label>
+                            <label className="text-sm font-medium text-foreground">Training Start Date</label>
+                            <input
+                              type="date"
+                              value={entry.trainingStartDate}
+                              onChange={(e) => updateEntry(entry.id, 'trainingStartDate', e.target.value)}
+                              className="input-premium w-full"
+                            />
+                          </div>
+
+                          {/* Training End Date */}
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium text-foreground">Training End Date</label>
+                            <input
+                              type="date"
+                              value={entry.trainingEndDate}
+                              onChange={(e) => updateEntry(entry.id, 'trainingEndDate', e.target.value)}
+                              className="input-premium w-full"
+                            />
+                          </div>
+
+                          {/* Start Time */}
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium text-foreground">Session Start Time</label>
                             <input
                               type="time"
                               value={entry.startTime}
@@ -557,8 +781,10 @@ export const DailyEfforts = () => {
                               className="input-premium w-full"
                             />
                           </div>
+
+                          {/* End Time */}
                           <div className="space-y-2">
-                            <label className="text-sm font-medium text-foreground">End Time</label>
+                            <label className="text-sm font-medium text-foreground">Session End Time</label>
                             <input
                               type="time"
                               value={entry.endTime}
@@ -566,13 +792,15 @@ export const DailyEfforts = () => {
                               className="input-premium w-full"
                             />
                           </div>
+
+                          {/* Effort Hours */}
                           <div className="space-y-2">
-                            <label className="text-sm font-medium text-foreground">Effort Hours</label>
+                            <label className="text-sm font-medium text-foreground">Effort in Hours</label>
                             <input
                               type="number"
                               value={entry.effortHours}
                               onChange={(e) => updateEntry(entry.id, 'effortHours', e.target.value)}
-                              placeholder="Auto-calculated or manual"
+                              placeholder="Auto-calculated"
                               min="0"
                               max="24"
                               step="0.5"
@@ -586,7 +814,7 @@ export const DailyEfforts = () => {
 
                   <div className="flex items-center gap-2 rounded-lg border border-info/30 bg-info/10 p-4 text-sm text-info">
                     <AlertCircle className="h-5 w-5 flex-shrink-0" />
-                    <p>Effort hours will be auto-calculated if you provide start and end times.</p>
+                    <p>Effort hours will be auto-calculated if you provide start and end times. You can add multiple entries for different stakeholders on the same day.</p>
                   </div>
                 </div>
               )}
@@ -596,22 +824,39 @@ export const DailyEfforts = () => {
                   <h2 className="text-xl font-semibold text-foreground">Review & Submit</h2>
                   
                   <div className="rounded-lg border border-border/50 bg-muted/20 p-4">
-                    <h4 className="font-medium text-foreground mb-2">Cohort Info</h4>
-                    <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-3">
-                      <p><span className="font-medium">Cohort:</span> {selectedCohort?.name}</p>
-                      <p><span className="font-medium">Date:</span> {formData.date}</p>
-                      <p><span className="font-medium">Active GenC:</span> {formData.activeGencCount || 'N/A'}</p>
+                    <h4 className="font-medium text-foreground mb-3">Cohort Info</h4>
+                    <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                      <div>
+                        <p className="text-muted-foreground">Cohort</p>
+                        <p className="font-medium text-foreground">{selectedCohort?.name}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Date</p>
+                        <p className="font-medium text-foreground">{format(parseISO(formData.date), 'EEEE, MMM dd, yyyy')}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Month</p>
+                        <p className="font-medium text-foreground">{formData.month}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Active GenC</p>
+                        <p className="font-medium text-foreground">{formData.activeGencCount || 'N/A'}</p>
+                      </div>
                     </div>
                   </div>
 
                   <div className="space-y-4">
-                    <h4 className="font-medium text-foreground">Entries ({entries.filter(e => e.stakeholderRole && e.areaOfWork).length})</h4>
+                    <h4 className="font-medium text-foreground">
+                      Entries ({entries.filter(e => e.stakeholderRole && e.areaOfWork).length})
+                    </h4>
                     {entries.filter(e => e.stakeholderRole && e.areaOfWork).map((entry, index) => (
                       <div key={entry.id} className="rounded-lg border border-border/50 bg-muted/20 p-4">
-                        <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                        <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
                           <div>
                             <p className="text-muted-foreground">Role</p>
-                            <p className="font-medium text-foreground capitalize">{entry.stakeholderRole.replace('-', ' ')}</p>
+                            <p className="font-medium text-foreground capitalize">
+                              {stakeholderRoles.find(r => r.value === entry.stakeholderRole)?.label}
+                            </p>
                           </div>
                           <div>
                             <p className="text-muted-foreground">Stakeholder</p>
@@ -623,7 +868,19 @@ export const DailyEfforts = () => {
                           </div>
                           <div>
                             <p className="text-muted-foreground">Hours</p>
-                            <p className="font-medium text-foreground">{entry.effortHours || '0'} hrs ({entry.mode})</p>
+                            <p className="font-medium text-foreground">
+                              {entry.effortHours || '0'} hrs ({entry.mode === 'in-person' ? 'In-Person' : 'Virtual'})
+                            </p>
+                          </div>
+                          {entry.startTime && entry.endTime && (
+                            <div>
+                              <p className="text-muted-foreground">Time</p>
+                              <p className="font-medium text-foreground">{entry.startTime} - {entry.endTime}</p>
+                            </div>
+                          )}
+                          <div>
+                            <p className="text-muted-foreground">Trainer Type</p>
+                            <p className="font-medium text-foreground capitalize">{entry.employeeType}</p>
                           </div>
                         </div>
                       </div>
@@ -639,7 +896,8 @@ export const DailyEfforts = () => {
                     <div>
                       <p className="font-medium text-foreground">Ready to Submit</p>
                       <p className="text-sm text-muted-foreground">
-                        {entries.filter(e => e.stakeholderRole && e.areaOfWork).length} entries ready for submission
+                        {entries.filter(e => e.stakeholderRole && e.areaOfWork).length} entries •{' '}
+                        {entries.filter(e => e.stakeholderRole && e.areaOfWork).reduce((sum, e) => sum + (parseFloat(e.effortHours) || 0), 0).toFixed(1)} total hours
                       </p>
                     </div>
                   </motion.div>
@@ -690,38 +948,85 @@ export const DailyEfforts = () => {
           className="space-y-6"
         >
           {/* Filters */}
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex gap-2">
-              {(['today', 'week', 'month', 'all'] as DateFilter[]).map((filter) => (
-                <button
-                  key={filter}
-                  onClick={() => setDateFilter(filter)}
-                  className={cn(
-                    'rounded-lg px-4 py-2 text-sm font-medium transition-all',
-                    dateFilter === filter
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                  )}
-                >
-                  {filter.charAt(0).toUpperCase() + filter.slice(1)}
-                </button>
-              ))}
-            </div>
-            <div className="relative">
-              <select
-                value={formData.cohortId}
-                onChange={(e) => setFormData({ ...formData, cohortId: e.target.value })}
-                className="input-premium appearance-none pr-10"
-              >
-                <option value="">All Cohorts</option>
-                {cohorts.map((cohort) => (
-                  <option key={cohort.id} value={cohort.id}>
-                    {cohort.code} - {cohort.name}
-                  </option>
+          <GlassCard className="p-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap gap-2">
+                {(['today', 'week', 'month', 'all'] as DateFilter[]).map((filter) => (
+                  <button
+                    key={filter}
+                    onClick={() => {
+                      setDateFilter(filter);
+                      setSelectedWeek('');
+                    }}
+                    className={cn(
+                      'rounded-lg px-4 py-2 text-sm font-medium transition-all',
+                      dateFilter === filter && !selectedWeek
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                    )}
+                  >
+                    {filter.charAt(0).toUpperCase() + filter.slice(1)}
+                  </button>
                 ))}
-              </select>
+              </div>
+              
+              <div className="flex flex-wrap gap-3">
+                {/* Cohort Filter */}
+                <div className="relative">
+                  <select
+                    value={formData.cohortId}
+                    onChange={(e) => setFormData({ ...formData, cohortId: e.target.value })}
+                    className="input-premium appearance-none pr-10"
+                  >
+                    <option value="">All Cohorts</option>
+                    {cohorts.map((cohort) => (
+                      <option key={cohort.id} value={cohort.id}>
+                        {cohort.code} - {cohort.name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                </div>
+
+                {/* Week Filter */}
+                {selectedCohort && calendarWeeks.length > 0 && (
+                  <div className="relative">
+                    <select
+                      value={selectedWeek}
+                      onChange={(e) => setSelectedWeek(e.target.value)}
+                      className="input-premium appearance-none pr-10"
+                    >
+                      <option value="">All Weeks</option>
+                      {calendarWeeks.map((week) => (
+                        <option key={week.id} value={week.id}>
+                          {week.label}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          </GlassCard>
+
+          {/* Summary Stats */}
+          {efforts.length > 0 && (
+            <div className="grid gap-4 sm:grid-cols-3">
+              <GlassCard className="p-4 text-center">
+                <p className="text-2xl font-bold text-foreground">{totalHours.toFixed(1)}</p>
+                <p className="text-sm text-muted-foreground">Total Hours</p>
+              </GlassCard>
+              <GlassCard className="p-4 text-center">
+                <p className="text-2xl font-bold text-foreground">{Object.keys(groupedEfforts).length}</p>
+                <p className="text-sm text-muted-foreground">Days Logged</p>
+              </GlassCard>
+              <GlassCard className="p-4 text-center">
+                <p className="text-2xl font-bold text-foreground">{efforts.length}</p>
+                <p className="text-sm text-muted-foreground">Total Entries</p>
+              </GlassCard>
+            </div>
+          )}
 
           {/* Efforts List */}
           {loadingEfforts ? (
@@ -733,45 +1038,28 @@ export const DailyEfforts = () => {
               {Object.entries(groupedEfforts)
                 .sort(([a], [b]) => new Date(b).getTime() - new Date(a).getTime())
                 .map(([date, dayEfforts]) => (
-                  <GlassCard key={date} className="p-6">
-                    <div className="mb-4 flex items-center justify-between">
+                  <div key={date} className="space-y-3">
+                    <div className="flex items-center justify-between px-1">
                       <h4 className="font-semibold text-foreground">
-                        {new Date(date).toLocaleDateString('en-US', {
-                          weekday: 'long',
-                          month: 'long',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })}
+                        {format(parseISO(date), 'EEEE, MMMM dd, yyyy')}
                       </h4>
                       <span className="rounded-full bg-primary/10 px-3 py-1 text-sm font-medium text-primary">
-                        {dayEfforts.reduce((sum, e) => sum + Number(e.effort_hours), 0)} hrs total
+                        {dayEfforts.reduce((sum, e) => sum + Number(e.effort_hours), 0).toFixed(1)} hrs
                       </span>
                     </div>
                     <div className="space-y-3">
-                      {dayEfforts.map((effort) => (
-                        <div
+                      {dayEfforts.map((effort, index) => (
+                        <EffortEntryCard
                           key={effort.id}
-                          className="flex items-center justify-between rounded-lg border border-border/30 bg-muted/20 p-4"
-                        >
-                          <div className="flex items-center gap-4">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                              <Calendar className="h-5 w-5 text-primary" />
-                            </div>
-                            <div>
-                              <p className="font-medium text-foreground">{effort.stakeholder_name}</p>
-                              <p className="text-sm text-muted-foreground">
-                                {effort.stakeholder_type} • {effort.area_of_work}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-semibold text-foreground">{effort.effort_hours} hrs</p>
-                            <p className="text-sm capitalize text-muted-foreground">{effort.mode_of_training}</p>
-                          </div>
-                        </div>
+                          effort={effort}
+                          index={index}
+                          onEdit={handleEditEffort}
+                          onView={handleViewEffort}
+                          onDelete={handleDeleteEffort}
+                        />
                       ))}
                     </div>
-                  </GlassCard>
+                  </div>
                 ))}
             </div>
           ) : (
@@ -779,7 +1067,9 @@ export const DailyEfforts = () => {
               <Calendar className="mx-auto h-12 w-12 text-muted-foreground/50" />
               <h3 className="mt-4 text-lg font-semibold text-foreground">No efforts found</h3>
               <p className="mt-2 text-muted-foreground">
-                {formData.cohortId ? 'No efforts logged for this cohort in the selected period' : 'Select a cohort to view efforts'}
+                {formData.cohortId 
+                  ? 'No efforts logged for this cohort in the selected period' 
+                  : 'Select a cohort to view efforts'}
               </p>
               <GradientButton
                 variant="primary"
@@ -792,6 +1082,20 @@ export const DailyEfforts = () => {
           )}
         </motion.div>
       )}
+
+      {/* Modals */}
+      <EffortViewModal
+        isOpen={!!viewingEffort}
+        onClose={() => setViewingEffort(null)}
+        effort={viewingEffort}
+      />
+      <EffortEditModal
+        isOpen={!!editingEffort}
+        onClose={() => setEditingEffort(null)}
+        onSubmit={handleSaveEdit}
+        effort={editingEffort}
+        isLoading={updateEffort.isPending}
+      />
     </div>
   );
 };
