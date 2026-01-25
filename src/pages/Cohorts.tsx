@@ -13,9 +13,11 @@ import {
 } from 'lucide-react';
 import { useCohortStore, Cohort } from '@/stores/cohortStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useCohorts, useCreateCohort, useDeleteCohort } from '@/hooks/useCohorts';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { GradientButton } from '@/components/ui/GradientButton';
 import { ActionMenu } from '@/components/ui/ActionMenu';
+import { AddCohortModal } from '@/components/modals/AddCohortModal';
 import { toast } from 'sonner';
 
 const statusConfig = {
@@ -24,15 +26,49 @@ const statusConfig = {
   upcoming: { label: 'Upcoming', class: 'badge-pending' },
 };
 
+// Mock coaches for dropdown
+const mockCoaches = [
+  { id: 'c1', name: 'Sarah Coach' },
+  { id: 'c2', name: 'Michael Chen' },
+  { id: 'c3', name: 'Priya Sharma' },
+  { id: 'c4', name: 'Rahul Verma' },
+];
+
 export const Cohorts = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [locationFilter, setLocationFilter] = useState<string>('all');
-  const { cohorts } = useCohortStore();
+  const [showAddCohort, setShowAddCohort] = useState(false);
+  const { cohorts: mockCohorts } = useCohortStore();
+  const { data: dbCohorts = [] } = useCohorts();
+  const createCohort = useCreateCohort();
+  const deleteCohort = useDeleteCohort();
   const { user } = useAuthStore();
   const navigate = useNavigate();
 
   const isAdmin = user?.role === 'admin';
+
+  // Use DB cohorts if available, otherwise mock
+  const cohorts = dbCohorts.length > 0 
+    ? dbCohorts.map(c => ({
+        id: c.id,
+        code: c.code,
+        name: c.name,
+        bu: c.bu,
+        skill: c.skill,
+        location: c.location,
+        startDate: c.start_date,
+        endDate: c.end_date,
+        status: c.status as 'active' | 'upcoming' | 'completed',
+        candidateCount: c.candidate_count,
+        progress: c.progress,
+        coachId: c.coach_id || '',
+        coachName: mockCoaches.find(coach => coach.id === c.coach_id)?.name || 'Unassigned',
+        trainers: [],
+        mentors: [],
+      }))
+    : mockCohorts;
+
   const locations = [...new Set(cohorts.map((c) => c.location))];
 
   const filteredCohorts = cohorts.filter((cohort) => {
@@ -42,18 +78,43 @@ export const Cohorts = () => {
       cohort.skill.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === 'all' || cohort.status === statusFilter;
     const matchesLocation = locationFilter === 'all' || cohort.location === locationFilter;
-    const matchesRole = isAdmin || cohort.coachId === 'c1';
+    const matchesRole = isAdmin || cohort.coachId === user?.id || cohort.coachId === 'c1';
     return matchesSearch && matchesStatus && matchesLocation && matchesRole;
   });
 
-  const handleEditCohort = (cohort: Cohort) => {
-    toast.info(`Edit cohort: ${cohort.name}`);
-    // Navigate to edit or open modal
+  const handleCreateCohort = (data: any) => {
+    createCohort.mutate({
+      code: data.code,
+      name: data.name,
+      bu: data.bu,
+      skill: data.skill,
+      location: data.location,
+      coach_id: data.coach_id || null,
+      start_date: data.start_date,
+      end_date: data.end_date || null,
+      status: 'upcoming',
+      candidate_count: 0,
+      progress: 0,
+    }, {
+      onSuccess: () => {
+        setShowAddCohort(false);
+        toast.success('Cohort created successfully');
+      },
+    });
   };
 
-  const handleDeleteCohort = (cohort: Cohort) => {
-    toast.info(`Delete cohort: ${cohort.name}`);
-    // Show confirmation dialog
+  const handleEditCohort = (cohort: any) => {
+    toast.info(`Edit cohort: ${cohort.name}`);
+  };
+
+  const handleDeleteCohort = (cohort: any) => {
+    if (confirm(`Are you sure you want to delete ${cohort.name}?`)) {
+      if (dbCohorts.length > 0) {
+        deleteCohort.mutate(cohort.id);
+      } else {
+        toast.info('Cannot delete mock data');
+      }
+    }
   };
 
   return (
@@ -77,7 +138,7 @@ export const Cohorts = () => {
           <GradientButton
             variant="primary"
             icon={<Plus className="h-5 w-5" />}
-            onClick={() => toast.info('Create new cohort functionality')}
+            onClick={() => setShowAddCohort(true)}
           >
             New Cohort
           </GradientButton>
@@ -157,16 +218,34 @@ export const Cohorts = () => {
           <GraduationCap className="mx-auto h-12 w-12 text-muted-foreground/50" />
           <h3 className="mt-4 text-lg font-semibold text-foreground">No cohorts found</h3>
           <p className="mt-2 text-muted-foreground">
-            Try adjusting your search or filter criteria
+            {isAdmin ? 'Create a new cohort to get started' : 'No cohorts assigned to you yet'}
           </p>
+          {isAdmin && (
+            <GradientButton
+              variant="primary"
+              className="mt-4"
+              onClick={() => setShowAddCohort(true)}
+            >
+              Create First Cohort
+            </GradientButton>
+          )}
         </motion.div>
       )}
+
+      {/* Add Cohort Modal */}
+      <AddCohortModal
+        isOpen={showAddCohort}
+        onClose={() => setShowAddCohort(false)}
+        onSubmit={handleCreateCohort}
+        coaches={mockCoaches}
+        isLoading={createCohort.isPending}
+      />
     </div>
   );
 };
 
 interface CohortCardProps {
-  cohort: Cohort;
+  cohort: any;
   index: number;
   onClick: () => void;
   onEdit: () => void;
@@ -175,7 +254,7 @@ interface CohortCardProps {
 }
 
 const CohortCard = ({ cohort, index, onClick, onEdit, onDelete, isAdmin }: CohortCardProps) => {
-  const status = statusConfig[cohort.status];
+  const status = statusConfig[cohort.status as keyof typeof statusConfig] || statusConfig.active;
 
   return (
     <motion.div
@@ -262,9 +341,9 @@ const CohortCard = ({ cohort, index, onClick, onEdit, onDelete, isAdmin }: Cohor
         <div className="mt-4 flex items-center justify-between border-t border-border/30 pt-4">
           <div className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary/20 text-xs font-semibold text-secondary">
-              {cohort.coachName.charAt(0)}
+              {cohort.coachName?.charAt(0) || 'U'}
             </div>
-            <span className="text-sm text-muted-foreground">{cohort.coachName}</span>
+            <span className="text-sm text-muted-foreground">{cohort.coachName || 'Unassigned'}</span>
           </div>
           <ArrowUpRight className="h-5 w-5 text-muted-foreground opacity-0 transition-all group-hover:text-primary group-hover:opacity-100" />
         </div>

@@ -14,6 +14,7 @@ import {
   Search,
   Moon,
   Sun,
+  UserCheck,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { FloatingOrbs } from '@/components/ui/FloatingOrbs';
@@ -32,6 +33,8 @@ interface NavItem {
 const navItems: NavItem[] = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', roles: ['admin', 'coach'] },
   { label: 'Cohorts', icon: GraduationCap, path: '/cohorts', roles: ['admin', 'coach'] },
+  { label: 'Coaches', icon: Users, path: '/coaches', roles: ['admin'] },
+  { label: 'Stakeholders', icon: UserCheck, path: '/stakeholders', roles: ['coach'] },
   { label: 'Candidates', icon: Users, path: '/candidates', roles: ['coach'] },
   { label: 'Daily Efforts', icon: Calendar, path: '/efforts', roles: ['coach'] },
   { label: 'Reports', icon: BarChart3, path: '/reports', roles: ['admin', 'coach'] },

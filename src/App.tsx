@@ -14,6 +14,8 @@ import { Candidates } from "./pages/Candidates";
 import { DailyEfforts } from "./pages/DailyEfforts";
 import { Reports } from "./pages/Reports";
 import { Settings } from "./pages/Settings";
+import { Coaches } from "./pages/Coaches";
+import { Stakeholders } from "./pages/Stakeholders";
 import { DashboardLayout } from "./components/layout/DashboardLayout";
 import NotFound from "./pages/NotFound";
 
@@ -35,6 +37,17 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
   const { user } = useAuthStore();
   
   if (user?.role !== 'admin') {
+    return <Navigate to="/dashboard" replace />;
+  }
+  
+  return <>{children}</>;
+};
+
+// Coach Only Route
+const CoachRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user } = useAuthStore();
+  
+  if (user?.role !== 'coach') {
     return <Navigate to="/dashboard" replace />;
   }
   
@@ -67,12 +80,32 @@ const App = () => (
               <Route path="/candidates" element={<Candidates />} />
               <Route path="/efforts" element={<DailyEfforts />} />
               <Route path="/reports" element={<Reports />} />
+              
+              {/* Admin Only Routes */}
+              <Route
+                path="/coaches"
+                element={
+                  <AdminRoute>
+                    <Coaches />
+                  </AdminRoute>
+                }
+              />
               <Route
                 path="/settings"
                 element={
                   <AdminRoute>
                     <Settings />
                   </AdminRoute>
+                }
+              />
+              
+              {/* Coach Only Routes */}
+              <Route
+                path="/stakeholders"
+                element={
+                  <CoachRoute>
+                    <Stakeholders />
+                  </CoachRoute>
                 }
               />
             </Route>
