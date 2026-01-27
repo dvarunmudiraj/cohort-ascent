@@ -36,7 +36,7 @@ const navItems: NavItem[] = [
   { label: 'Coaches', icon: Users, path: '/coaches', roles: ['admin'] },
   { label: 'Stakeholders', icon: UserCheck, path: '/stakeholders', roles: ['coach'] },
   { label: 'Candidates', icon: Users, path: '/candidates', roles: ['coach'] },
-  { label: 'Daily Efforts', icon: Calendar, path: '/efforts', roles: ['coach'] },
+  { label: 'Weekly Efforts', icon: Calendar, path: '/efforts', roles: ['coach'] },
   { label: 'Reports', icon: BarChart3, path: '/reports', roles: ['admin', 'coach'] },
   { label: 'Settings', icon: Settings, path: '/settings', roles: ['admin'] },
 ];
