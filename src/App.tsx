@@ -11,7 +11,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { Cohorts } from "./pages/Cohorts";
 import { CohortDetail } from "./pages/CohortDetail";
 import { Candidates } from "./pages/Candidates";
-import { DailyEfforts } from "./pages/DailyEfforts";
+import { WeeklyEfforts } from "./pages/WeeklyEfforts";
 import { Reports } from "./pages/Reports";
 import { Settings } from "./pages/Settings";
 import { Coaches } from "./pages/Coaches";
@@ -78,7 +78,7 @@ const App = () => (
               <Route path="/cohorts" element={<Cohorts />} />
               <Route path="/cohorts/:id" element={<CohortDetail />} />
               <Route path="/candidates" element={<Candidates />} />
-              <Route path="/efforts" element={<DailyEfforts />} />
+              <Route path="/efforts" element={<WeeklyEfforts />} />
               <Route path="/reports" element={<Reports />} />
               
               {/* Admin Only Routes */}
